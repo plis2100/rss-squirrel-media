@@ -91,15 +91,18 @@ def convertir_fecha(texto):
         mes = MESES[coincidencia.group(2)]
         anio = int(coincidencia.group(3))
 
-        return datetime(
-            anio,
-            mes,
-            dia,
-            12,
-            0,
-            0,
-            tzinfo=timezone.utc,
-        )
+        try:
+            return datetime(
+                anio,
+                mes,
+                dia,
+                12,
+                0,
+                0,
+                tzinfo=timezone.utc,
+            )
+        except ValueError:
+            return None
 
     return None
 
@@ -131,11 +134,14 @@ def obtener_lista_noticias(pagina):
                 }
 
                 contenedor = contenedor.parentElement;
+
                 const texto = (contenedor.innerText || "")
                     .replace(/\\s+/g, " ")
                     .trim();
 
-                if (/(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\\s*[-–—]\\s*\\d{4}/i.test(texto)) {
+                const patronFecha = /(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\\s*[-–—]\\s*\\d{4}/i;
+
+                if (patronFecha.test(texto)) {
                     break;
                 }
             }
@@ -219,6 +225,7 @@ def completar_noticia(pagina, noticia, posicion):
             wait_until="domcontentloaded",
             timeout=90000,
         )
+
         pagina.wait_for_timeout(1000)
 
         titulo = limpiar_texto(
@@ -252,15 +259,17 @@ def completar_noticia(pagina, noticia, posicion):
                 selector
             ).all_text_contents()
 
-            parrafos = [
-                limpiar_texto(parrafo)
-                for parrafo in parrafos
-                if len(limpiar_texto(parrafo)) >= 40
-            ]
+            parrafos_limpios = []
 
-            if parrafos:
+            for parrafo in parrafos:
+                parrafo = limpiar_texto(parrafo)
+
+                if len(parrafo) >= 40:
+                    parrafos_limpios.append(parrafo)
+
+            if parrafos_limpios:
                 noticia["descripcion"] = " ".join(
-                    parrafos
+                    parrafos_limpios
                 )[:1200]
                 break
 
@@ -294,6 +303,10 @@ def obtener_noticias():
 
         contexto = navegador.new_context(
             locale="es-ES",
+
+            # La web tiene un certificado SSL con fecha inválida.
+            ignore_https_errors=True,
+
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -302,16 +315,22 @@ def obtener_noticias():
         )
 
         pagina = contexto.new_page()
-        noticias = obtener_lista_noticias(pagina)
+
+        noticias = obtener_lista_noticias(
+            pagina
+        )
+
         noticias_completas = []
 
         for posicion, noticia in enumerate(noticias):
+            noticia_completa = completar_noticia(
+                pagina,
+                noticia,
+                posicion,
+            )
+
             noticias_completas.append(
-                completar_noticia(
-                    pagina,
-                    noticia,
-                    posicion,
-                )
+                noticia_completa
             )
 
         navegador.close()
@@ -377,14 +396,18 @@ def crear_rss(noticias):
 
 
 def guardar_rss(contenido):
-    temporal = ARCHIVO_RSS.with_suffix(".xml.tmp")
+    archivo_temporal = ARCHIVO_RSS.with_suffix(
+        ".xml.tmp"
+    )
 
-    temporal.write_text(
+    archivo_temporal.write_text(
         contenido,
         encoding="utf-8",
     )
 
-    temporal.replace(ARCHIVO_RSS)
+    archivo_temporal.replace(
+        ARCHIVO_RSS
+    )
 
 
 def main():

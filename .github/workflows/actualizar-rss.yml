@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
   schedule:
-    - cron: "49 * * * *"
+    - cron: "49 6-17 * * *"
 
 permissions:
   contents: write
@@ -19,24 +19,49 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: Comprobar horario de España
+        id: horario
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "activo=true" >> "$GITHUB_OUTPUT"
+            echo "Ejecución manual permitida."
+            exit 0
+          fi
+
+          HORA=$(TZ=Europe/Madrid date +%H)
+
+          if ((10#$HORA >= 8 && 10#$HORA <= 18)); then
+            echo "activo=true" >> "$GITHUB_OUTPUT"
+            echo "Hora española: $HORA. Se actualizará la RSS."
+          else
+            echo "activo=false" >> "$GITHUB_OUTPUT"
+            echo "Hora española: $HORA. Fuera del horario."
+          fi
+
       - name: Descargar repositorio
+        if: steps.horario.outputs.activo == 'true'
         uses: actions/checkout@v4
 
       - name: Configurar Python
+        if: steps.horario.outputs.activo == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
 
       - name: Instalar dependencias
+        if: steps.horario.outputs.activo == 'true'
         run: |
           python -m pip install -r requirements.txt
           python -m playwright install --with-deps chromium
 
       - name: Crear RSS
+        if: steps.horario.outputs.activo == 'true'
         run: python rss.py
 
       - name: Guardar RSS actualizada
+        if: steps.horario.outputs.activo == 'true'
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
